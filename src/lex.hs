@@ -2,24 +2,30 @@ import System.IO
 import System.Environment
 import Control.Monad
 
-data BraceMod = Default | Module | ModuleOpen
+data BraceMod = Default | Module | ModuleOpen | Case | CaseOpen
 
 innerUnmacro :: String -> String
 innerUnmacro [] = []
-innerUnmacro (':':[]) = ":0]"
+innerUnmacro (']':']':[]) = ":0]"
 innerUnmacro (x:xs) = x:(innerUnmacro xs)
 
 unmacro :: [BraceMod] -> String -> (String,[BraceMod]->[BraceMod])
 unmacro _ "mod" = ("module",\s->[ModuleOpen, Module]++s)
+unmacro _ "case" = ("case",\s->[CaseOpen, Case]++s)
+unmacro _ "comb" = ("always_comb",id)
 unmacro _ "i" = ("input",id)
 unmacro _ "o" = ("output",id)
 unmacro _ "l" = ("logic",id)
+unmacro _ "r" = ("reg",id)
 unmacro _ "ff" = ("always_ff @",id)
 unmacro (ModuleOpen:_) "{" = (";",tail)
+unmacro (CaseOpen:_) "{" = (" ", tail)
 unmacro _ "{" = ("begin",\s->[Default]++s)
 unmacro (Module:_) "}" = ("endmodule",tail)
+unmacro (Case:_) "}" = ("endcase", tail)
 unmacro _ "}" = ("end",tail)
 unmacro _ "->" = ("assign",id)
+unmacro _ "def>>" = ("default: ",id)
 unmacro _ x = (innerUnmacro x,id)
 
 translate :: [BraceMod] -> [String] -> [String]
@@ -41,6 +47,9 @@ prettify :: String -> String -> String
 prettify t [] = []
 prettify t (';':xs) = ";\n"++t++(prettify t xs)
 prettify t ('b':'e':'g':'i':'n':xs) = "begin\n"++"\t"++t++(prettify ("\t"++t) xs)
+prettify t ('c':'a':'s':'e':xs) = "case"++(prettify (" "++t) xs)
+prettify (' ':t) (')':' ':xs) = ")\n\t"++t++(prettify ("\t"++t) xs)
+prettify t ('e':'n':'d':'c':'a':'s':'e':xs) = "endcase\n"++(prettify (drop 1 t) xs)
 prettify t ('e':'n':'d':'m':'o':'d':'u':'l':'e':xs) = "endmodule\n"++(prettify (drop 1 t) xs)
 prettify t ('e':'n':'d':xs) = "end\n"++(drop 1 t)++(prettify (drop 1 t) xs)
 prettify t ('m':'o':'d':'u':'l':'e':xs) = "module"++(prettify ("\t"++t) xs)
@@ -59,6 +68,7 @@ untab :: String -> String
 untab [] = []
 untab ('\t':'e':'n':'d':xs) = "end"++(untab xs)
 untab ('\t':' ':'e':'n':'d':xs) = "end"++(untab xs)
+untab ('\t':' ':xs) = "\t"++(untab xs)
 untab (x:xs) = x:(untab xs)
 
 main :: IO ()
@@ -67,7 +77,9 @@ main = do
     if (length filename == 0) || (length filename > 1) then (putStrLn "error! bad number of arguments!") else 
         do {
             handle <- openFile (head filename) ReadMode
+        ;   output <- openFile (((reverse.dropWhile (/='.').reverse.head) filename)++"v") WriteMode
         ;   prg <- hGetContents handle
-        ;   putStrLn$ untab $ prettify "" $ unspace . unspace $ process prg
+        ;   hPutStr output $ untab $ prettify "" $ unspace . unspace $ process prg
         ;   hClose handle
+        ;   hClose output
         }
