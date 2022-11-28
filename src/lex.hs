@@ -1,8 +1,26 @@
 import System.IO
 import System.Environment
 import Control.Monad
+import Data.Function
+import Data.List
 
 data BraceMod = Default | Module | ModuleOpen | Case | CaseOpen
+
+whitespace = " \n\t\r"
+wsAsList = [" ","\n","\t","\r"]
+specialChars = "()[]{}"
+semicolon = ";"
+alphanumeric = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+wordsSpecial :: String -> [String]
+wordsSpecial x = foldr (++) [] $
+                 map (groupBy (allin semicolon)) $
+                 foldr (++) [] $ 
+                 map (groupBy (allin whitespace)) $
+                 groupBy (allin specialChars) x
+        where
+             allin k = ((xor) `on` (`elem` k))
+             xor a b = (a && b) || ((not a) && (not b))
 
 innerUnmacro :: String -> String
 innerUnmacro [] = []
@@ -19,57 +37,45 @@ unmacro _ "l" = ("logic",id)
 unmacro _ "r" = ("reg",id)
 unmacro _ "ff" = ("always_ff @",id)
 unmacro (ModuleOpen:_) "{" = (";",tail)
-unmacro (CaseOpen:_) "{" = (" ", tail)
+unmacro (CaseOpen:_) "{" = ("\n", tail)
 unmacro _ "{" = ("begin",\s->[Default]++s)
 unmacro (Module:_) "}" = ("endmodule",tail)
 unmacro (Case:_) "}" = ("endcase", tail)
 unmacro _ "}" = ("end",tail)
 unmacro _ "->" = ("assign",id)
+unmacro _ "]]" = (":0]", id)
 unmacro _ "def>>" = ("default: ",id)
-unmacro _ x = (innerUnmacro x,id)
+unmacro _ x = (x,id)
 
 translate :: [BraceMod] -> [String] -> [String]
 translate s [] = []
 translate s (x:xs) = [(fst$unmacro s x)]++(translate ((snd$unmacro s x) s) xs)
 
-splitParens :: [String] -> [String]
-splitParens (('(':xs):ks) = ["("]++[xs]++(splitParens ks)
-splitParens (('{':xs):ks) = ["{"]++[xs]++(splitParens ks)
-splitParens (x:xs) = [x]++(splitParens xs)
-splitParens [] = []
---splitParens (('[':xs):ks) = ["["]++[xs]++(splitParens ks)
+removeSpaces :: [String] -> [String]
+removeSpaces [] = []
+removeSpaces (x:xs) | (and $ map (`elem`whitespace) x) = removeSpaces xs
+                    | otherwise = [x]++(removeSpaces xs)
 
-process :: String -> String
-process code = unwords $ translate [] $ splitParens $ words code
-
---  initial tabbing -> string to prettify -> output
-prettify :: String -> String -> String
-prettify t [] = []
-prettify t (';':xs) = ";\n"++t++(prettify t xs)
-prettify t ('b':'e':'g':'i':'n':xs) = "begin\n"++"\t"++t++(prettify ("\t"++t) xs)
-prettify t ('c':'a':'s':'e':xs) = "case"++(prettify (" "++t) xs)
-prettify (' ':t) (')':' ':xs) = ")\n\t"++t++(prettify ("\t"++t) xs)
-prettify t ('e':'n':'d':'c':'a':'s':'e':xs) = "endcase\n"++(prettify (drop 1 t) xs)
-prettify t ('e':'n':'d':'m':'o':'d':'u':'l':'e':xs) = "endmodule\n"++(prettify (drop 1 t) xs)
-prettify t ('e':'n':'d':xs) = "end\n"++(drop 1 t)++(prettify (drop 1 t) xs)
-prettify t ('m':'o':'d':'u':'l':'e':xs) = "module"++(prettify ("\t"++t) xs)
-prettify t (x:xs) = x:(prettify t xs)
-
-unspace :: String -> String
-unspace [] = []
-unspace (x:' ':'(':xs) = x:'(':(unspace xs)
-unspace ('(':' ':xs) = '(':(unspace xs)
-unspace (' ':' ':xs) = ' ':(unspace xs)
-unspace (' ':';':xs) = ';':(unspace xs)
-unspace (';':' ':xs) = ';':(unspace xs)
-unspace (x:xs) = x:(unspace xs)
+process :: String -> [String]
+process code = translate [] $ removeSpaces $ wordsSpecial code
 
 untab :: String -> String
 untab [] = []
 untab ('\t':'e':'n':'d':xs) = "end"++(untab xs)
-untab ('\t':' ':'e':'n':'d':xs) = "end"++(untab xs)
-untab ('\t':' ':xs) = "\t"++(untab xs)
 untab (x:xs) = x:(untab xs)
+
+fmt :: String -> [String] -> [String]
+fmt t [] = []
+fmt t (";":xs) = [";","\n",t]++(fmt t xs)
+fmt t ("\n":xs) = ["\n",t]++(fmt t xs)
+fmt t ("begin":xs) = [" begin","\n",t++"\t"]++(fmt (t++"\t") xs)
+fmt t ("case":xs) = ["case "]++(fmt (t++"\t") xs)
+fmt t ("module":xs) = ["module "]++(fmt (t++"\t") xs)
+fmt t ("endmodule":xs) = ["endmodule","\n",tail t]++(fmt (tail t) xs)
+fmt t ("end":xs) = ["end","\n",tail t]++(fmt (tail t) xs)
+fmt t ("endcase":xs) = ["endcase","\n",tail t]++(fmt (tail t) xs)
+fmt t (x:xs) | (((last x)`elem`(alphanumeric++"]<=")) && ((head$head xs)`elem`(alphanumeric++"[="))) = [x," "]++(fmt t xs)
+             | otherwise = [x]++(fmt t xs)
 
 main :: IO ()
 main = do
@@ -79,7 +85,7 @@ main = do
             handle <- openFile (head filename) ReadMode
         ;   output <- openFile (((reverse.dropWhile (/='.').reverse.head) filename)++"v") WriteMode
         ;   prg <- hGetContents handle
-        ;   hPutStr output $ untab $ prettify "" $ unspace . unspace $ process prg
+        ;   hPutStr output $ untab $ foldr (<>) "" $ fmt "" $ process prg
         ;   hClose handle
         ;   hClose output
         }
