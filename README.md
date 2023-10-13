@@ -17,7 +17,7 @@ r => reg
 -> => assign
 ff () {} => always_ff @() {}
 def>> => default: 
-[x]] => [x:0]
+[x] => [x:0]
 ```
 
 To use, install the binary `build/vmacro` to somewhere on your path, like `/usr/bin`. Then, run `vmacro /path/to/macro/file.vm`.
