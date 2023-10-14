@@ -113,13 +113,26 @@ tlParser = T.concat <$> some (
                 (singleton <$> anySingle)
                              )
 
+handleFileNameParseError :: Either (ParseErrorBundle String Void) String -> String
+handleFileNameParseError (Left k) = error $ errorBundlePretty $ k
+handleFileNameParseError (Right x) = x
+
+parseAndWrite :: [String] -> IO ()
+parseAndWrite [] = error "no file given!"
+parseAndWrite (k:[]) = do
+    b <- readFile k
+    let (c, _) = runState (runParserT tlParser "" $ pack b) []
+        outputFileName = (++".v") . handleFileNameParseError . parse (takeWhileP Nothing (/= '.')::Parsec Void String String) "" $ k
+    case c of
+        Left e -> putStrLn . errorBundlePretty $ e
+        Right x -> writeFile outputFileName $ unpack x
+parseAndWrite (k:"-o":v:[]) = do
+    b <- readFile k
+    let (c, _) = runState (runParserT tlParser "" $ pack b) []
+    case c of
+        Left e -> putStrLn . errorBundlePretty $ e
+        Right x -> writeFile v $ unpack x
+parseAndWrite _ = putStrLn "invalid usage!\nusage: vmac input/file/path.vm [-o output-file/path.v]"
+
 main :: IO ()
-main = do
-    a <- getArgs
-    if length a == 0 then error "no file given!" else do
-        b <- readFile . head $ a
-        let (c, _) = runState (runParserT tlParser "" $ pack b) []
-        -- let c = runParser tlParser "" $ pack b
-        case c of
-            Left e -> putStrLn . errorBundlePretty $ e
-            Right x -> writeFile (head a ++ ".v") $ unpack x
+main = parseAndWrite =<< getArgs
