@@ -8,7 +8,7 @@ import Data.Void
 import Control.Monad.State.Strict
 import Data.Text (Text, pack, unpack, singleton)
 import qualified Data.Text as T
-
+ 
 data Braces = ModOpen | CaseOpen | BeginOpen deriving(Show)
 
 type Parser = ParsecT Void Text (State [Braces])
@@ -93,11 +93,17 @@ closeCurly = do
             CaseOpen -> return "endcase"
             BeginOpen -> return "end"
 
+escapeMacro :: Parser Text
+escapeMacro = pack <$> do
+    _ <- string "``"
+    some alphaNumChar
+
 defcase :: Parser Text
 defcase = ignoreWS $ string "def>>" *> return "default: "
 
 tlParser :: Parser Text
 tlParser = T.concat <$> some (
+                try escapeMacro <|>
                 try modl <|>
                 try input <|> 
                 try logic <|>
@@ -118,7 +124,8 @@ handleFileNameParseError (Left k) = error $ errorBundlePretty $ k
 handleFileNameParseError (Right x) = x
 
 parseAndWrite :: [String] -> IO ()
-parseAndWrite [] = error "no file given!"
+parseAndWrite [] = do
+    putStrLn "vmac: Verilog Macro expander\nusage: vmac input/file/path.vm [-o output-file/path.v]\texpand a macro file into a verilog file"
 parseAndWrite (k:[]) = do
     b <- readFile k
     let (c, _) = runState (runParserT tlParser "" $ pack b) []
