@@ -18,7 +18,8 @@ r => reg
 ff () {} => always_ff @() {}
 def>> => default: 
 [x] => [x:0]
-\`\`i => i (a literal escaper; if you want LITERALLY the letter i, and not "input", then you should prefix i with \`\`.)
+``i => i (a literal escaper; if you want LITERALLY the letter i, and 
+       not "input", then you should prefix i with ``.)
 ```
 
 To use, install the binary `build/vmacro` to somewhere on your path, like `/usr/bin`. Then, run `vmacro /path/to/macro/file.vm`.
